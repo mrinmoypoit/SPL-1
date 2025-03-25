@@ -78,6 +78,7 @@ void calculate_pagerank(Component components[], int n, int votes[MAX_COMPONENTS]
 void calculate_bayesian_ranking(Component components[], int n);
 void generate_and_save_user_id(const char *user_name);
 void save_user_data(int user_id, const UserComparison *user_comparison);
+void process_votes_and_update_ratings(UserComparison *user_comparison);
 
 // Global variables
 UserComparison users[MAX_USERS];
@@ -301,7 +302,11 @@ int load_votes_from_file(const char *filename, UserComparison *user_comparison)
 
     for (int i = 0; i < user_comparison->num_components; i++)
     {
-        fscanf(file, "%s %f %f %lf %lf %lf %lf %lf %lf", user_comparison->components[i].name, &user_comparison->components[i].wins, &user_comparison->components[i].elo, &user_comparison->components[i].rating, &user_comparison->components[i].RD, &user_comparison->components[i].mu, &user_comparison->components[i].sigma, &user_comparison->components[i].pagerank, &user_comparison->components[i].bayesian_score);
+        fscanf(file, "%s %f %f %lf %lf %lf %lf %lf %lf", user_comparison->components[i].name, 
+              &user_comparison->components[i].wins, &user_comparison->components[i].elo, 
+              &user_comparison->components[i].rating, &user_comparison->components[i].RD, 
+              &user_comparison->components[i].mu, &user_comparison->components[i].sigma, 
+              &user_comparison->components[i].pagerank, &user_comparison->components[i].bayesian_score);
     }
 
     for (int i = 0; i < user_comparison->num_components; i++)
@@ -336,7 +341,16 @@ void save_votes_to_file(const char *filename, UserComparison *user_comparison)
 
     for (int i = 0; i < user_comparison->num_components; i++)
     {
-        fprintf(file, "%s %.0f %.2f %.2f %.2f %.2f %.2f %.2f %.2f\n", user_comparison->components[i].name, user_comparison->components[i].wins, user_comparison->components[i].elo, user_comparison->components[i].rating, user_comparison->components[i].RD, user_comparison->components[i].mu, user_comparison->components[i].sigma, user_comparison->components[i].pagerank, user_comparison->components[i].bayesian_score);
+        fprintf(file, "%s %.0f %.2f %.2f %.2f %.2f %.2f %.2f %.2f\n", 
+               user_comparison->components[i].name, 
+               user_comparison->components[i].wins, 
+               user_comparison->components[i].elo, 
+               user_comparison->components[i].rating, 
+               user_comparison->components[i].RD, 
+               user_comparison->components[i].mu, 
+               user_comparison->components[i].sigma, 
+               user_comparison->components[i].pagerank, 
+               user_comparison->components[i].bayesian_score);
     }
 
     for (int i = 0; i < user_comparison->num_components; i++)
@@ -534,6 +548,44 @@ void save_user_data(int user_id, const UserComparison *user_comparison)
     printf("User data saved to %s.\n", filename);
 }
 
+// Process votes and update ratings based on the chosen algorithm
+void process_votes_and_update_ratings(UserComparison *user_comparison)
+{
+    for (int i = 0; i < user_comparison->num_components; i++)
+    {
+        for (int j = 0; j < user_comparison->num_components; j++)
+        {
+            if (user_comparison->votes[i][j] > 0)
+            {
+                // For each win in the voting matrix, update the ratings
+                for (int k = 0; k < user_comparison->votes[i][j]; k++)
+                {
+                    if (user_comparison->algorithm_choice == 1)
+                    {
+                        user_comparison->components[i].wins++;
+                    }
+                    else if (user_comparison->algorithm_choice == 2)
+                    {
+                        update_elo_ratings(&user_comparison->components[i], &user_comparison->components[j]);
+                    }
+                    else if (user_comparison->algorithm_choice == 3)
+                    {
+                        update_glicko_ratings(&user_comparison->components[i], &user_comparison->components[j]);
+                    }
+                    else if (user_comparison->algorithm_choice == 4)
+                    {
+                        update_bradley_terry_ratings(&user_comparison->components[i], &user_comparison->components[j]);
+                    }
+                    else if (user_comparison->algorithm_choice == 5)
+                    {
+                        update_trueskill_ratings(&user_comparison->components[i], &user_comparison->components[j]);
+                    }
+                }
+            }
+        }
+    }
+}
+
 int main()
 {
     srand(time(NULL)); // Seed for random share code generation
@@ -596,7 +648,9 @@ int main()
         }
 
         printf("How many components are there? ");
-        if (scanf("%d", &user_comparison.num_components) != 1 || user_comparison.num_components < 2 || user_comparison.num_components > MAX_COMPONENTS)
+        if (scanf("%d", &user_comparison.num_components) != 1 || 
+            user_comparison.num_components < 2 || 
+            user_comparison.num_components > MAX_COMPONENTS)
         {
             printf("Invalid number of components. Exiting.\n");
             return 1;
@@ -628,15 +682,6 @@ int main()
                 user_comparison.votes[i][j] = 0;
             }
         }
-
-        // Save the new comparison to a file
-        char filename[20];
-        sprintf(filename, "%d.txt", user_comparison.user_id);
-        save_votes_to_file(filename, &user_comparison);
-        printf("New comparison saved to %s.\n", filename);
-
-        // Save user ID and name to history
-        generate_and_save_user_id(user_comparison.user_name);
     }
     else
     {
@@ -650,7 +695,9 @@ int main()
         for (int j = i + 1; j < user_comparison.num_components; j++)
         {
             int choice;
-            printf("Which is better? 1. %s or 2. %s", user_comparison.components[i].name, user_comparison.components[j].name);
+            printf("Which is better? 1. %s or 2. %s", 
+                  user_comparison.components[i].name, 
+                  user_comparison.components[j].name);
             if (user_comparison.algorithm_choice == 4)
             {
                 printf(" (0 to skip): ");
@@ -684,7 +731,10 @@ int main()
         }
     }
 
-    // Aggregate votes
+    // Process the votes and update ratings
+    process_votes_and_update_ratings(&user_comparison);
+
+    // Aggregate votes (for win rate, PageRank, and Bayesian)
     aggregate_votes(&user_comparison);
 
     // Calculate rankings based on the chosen algorithm
@@ -744,6 +794,9 @@ int main()
     sprintf(filename, "%d.txt", user_comparison.user_id);
     save_votes_to_file(filename, &user_comparison);
     printf("Final rankings saved to %s.\n", filename);
+
+    // Save user data
+    save_user_data(user_comparison.user_id, &user_comparison);
 
     return 0;
 }
